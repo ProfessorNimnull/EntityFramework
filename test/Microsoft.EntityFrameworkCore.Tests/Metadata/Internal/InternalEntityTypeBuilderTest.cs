@@ -1184,7 +1184,7 @@ namespace Microsoft.EntityFrameworkCore.Tests.Metadata.Internal
                 .HasPrincipalKey(keyBuilder.Metadata.Properties, ConfigurationSource.DataAnnotation)
                 .HasForeignKey(new[] { fkProperty1, fkProperty2 }, ConfigurationSource.Explicit);
 
-            keyBuilder = principalEntityBuilder.PrimaryKey(new[] { Order.IdProperty }, ConfigurationSource.DataAnnotation);
+            keyBuilder = principalEntityBuilder.PrimaryKey(new[] { Customer.IdProperty }, ConfigurationSource.DataAnnotation);
 
             Assert.Same(keyBuilder.Metadata, principalEntityBuilder.Metadata.FindPrimaryKey());
             var fk = dependentEntityBuilder.Metadata.GetForeignKeys().Single();
@@ -1201,7 +1201,7 @@ namespace Microsoft.EntityFrameworkCore.Tests.Metadata.Internal
             dependentEntityBuilder.Relationship(principalEntityBuilder, ConfigurationSource.DataAnnotation)
                 .HasPrincipalKey(keyBuilder.Metadata.Properties, ConfigurationSource.DataAnnotation);
 
-            keyBuilder = principalEntityBuilder.PrimaryKey(new[] { Order.IdProperty }, ConfigurationSource.DataAnnotation);
+            keyBuilder = principalEntityBuilder.PrimaryKey(new[] { Customer.IdProperty }, ConfigurationSource.DataAnnotation);
 
             Assert.Same(keyBuilder.Metadata, dependentEntityBuilder.Metadata.GetForeignKeys().Single().PrincipalKey);
             Assert.Same(keyBuilder.Metadata, principalEntityBuilder.Metadata.GetKeys().Single());
@@ -1217,7 +1217,7 @@ namespace Microsoft.EntityFrameworkCore.Tests.Metadata.Internal
             dependentEntityBuilder.Relationship(principalEntityBuilder, ConfigurationSource.Explicit)
                 .HasPrincipalKey(existingKeyBuilder.Metadata.Properties, ConfigurationSource.Explicit);
 
-            var keyBuilder = principalEntityBuilder.PrimaryKey(new[] { Order.IdProperty }, ConfigurationSource.Explicit);
+            var keyBuilder = principalEntityBuilder.PrimaryKey(new[] { Customer.IdProperty }, ConfigurationSource.Explicit);
 
             Assert.Same(existingKeyBuilder.Metadata, dependentEntityBuilder.Metadata.GetForeignKeys().Single().PrincipalKey);
             Assert.Equal(2, principalEntityBuilder.Metadata.GetKeys().Count());
@@ -1265,18 +1265,18 @@ namespace Microsoft.EntityFrameworkCore.Tests.Metadata.Internal
             var entityBuilder = modelBuilder.Entity(typeof(Order), ConfigurationSource.Explicit);
             var derivedEntityBuilder = modelBuilder.Entity(typeof(SpecialOrder), ConfigurationSource.Convention);
             derivedEntityBuilder.HasBaseType(entityBuilder.Metadata, ConfigurationSource.Convention);
-            var derivedProperty = derivedEntityBuilder.Property(nameof(SpecialOrder.Specialty), ConfigurationSource.DataAnnotation);
+            var derivedProperty = derivedEntityBuilder.Property("byte", typeof(int), ConfigurationSource.DataAnnotation);
             derivedProperty.IsConcurrencyToken(true, ConfigurationSource.Convention);
             derivedProperty.HasMaxLength(1, ConfigurationSource.DataAnnotation);
             var derivedEntityBuilder2 = modelBuilder.Entity(typeof(BackOrder), ConfigurationSource.Convention);
             derivedEntityBuilder2.HasBaseType(entityBuilder.Metadata, ConfigurationSource.Convention);
-            var derivedProperty2 = derivedEntityBuilder2.Property(nameof(SpecialOrder.Specialty), typeof(byte), ConfigurationSource.Convention);
+            var derivedProperty2 = derivedEntityBuilder2.Property("byte", typeof(byte), ConfigurationSource.Convention);
             derivedProperty2.RequiresValueGenerator(true, ConfigurationSource.Convention);
             derivedProperty2.HasMaxLength(2, ConfigurationSource.Convention);
 
-            var propertyBuilder = entityBuilder.Property(nameof(SpecialOrder.Specialty), typeof(int), ConfigurationSource.Convention);
-            Assert.Same(propertyBuilder.Metadata, entityBuilder.Metadata.FindProperty(nameof(SpecialOrder.Specialty)));
-            Assert.False(entityBuilder.Ignore(nameof(SpecialOrder.Specialty), ConfigurationSource.Convention));
+            var propertyBuilder = entityBuilder.Property("byte", typeof(int), ConfigurationSource.Convention);
+            Assert.Same(propertyBuilder.Metadata, entityBuilder.Metadata.FindProperty("byte"));
+            Assert.False(entityBuilder.Ignore("byte", ConfigurationSource.Convention));
             Assert.Empty(derivedEntityBuilder.Metadata.GetDeclaredProperties());
             Assert.Empty(derivedEntityBuilder2.Metadata.GetDeclaredProperties());
             Assert.Equal(typeof(int), propertyBuilder.Metadata.ClrType);

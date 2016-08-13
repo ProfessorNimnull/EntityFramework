@@ -11,28 +11,28 @@ using Microsoft.EntityFrameworkCore.Metadata.Internal;
 namespace Microsoft.EntityFrameworkCore.Metadata.Conventions.Internal
 {
     /// <summary>
-    ///     This API supports the Entity Framework Core infrastructure and is not intended to be used 
+    ///     This API supports the Entity Framework Core infrastructure and is not intended to be used
     ///     directly from your code. This API may change or be removed in future releases.
     /// </summary>
-    public class ForeignKeyPropertyDiscoveryConvention 
-        : IForeignKeyConvention, INavigationConvention, IPropertyConvention, IPrincipalEndConvention
+    public class ForeignKeyPropertyDiscoveryConvention
+        : IForeignKeyConvention, INavigationConvention, IPropertyConvention, IPrincipalEndConvention, IPropertyFieldChangedConvention
     {
         /// <summary>
-        ///     This API supports the Entity Framework Core infrastructure and is not intended to be used 
+        ///     This API supports the Entity Framework Core infrastructure and is not intended to be used
         ///     directly from your code. This API may change or be removed in future releases.
         /// </summary>
         public virtual InternalRelationshipBuilder Apply(InternalRelationshipBuilder relationshipBuilder)
         {
             var foreignKey = relationshipBuilder.Metadata;
-            var foreignKeyProperties = FindCandidateForeignKeyProperties(foreignKey, onDependent: true);
+            var foreignKeyProperties = FindCandidateForeignKeyProperties(foreignKey, true);
             if (foreignKeyProperties == null)
             {
                 // Try to invert if one to one or can be converted to one to one
                 if ((foreignKey.IsUnique
-                    || foreignKey.PrincipalToDependent == null)
+                     || foreignKey.PrincipalToDependent == null)
                     && ConfigurationSource.Convention.Overrides(foreignKey.GetPrincipalEndConfigurationSource()))
                 {
-                    var candidatePropertiesOnPrincipal = FindCandidateForeignKeyProperties(foreignKey, onDependent: false);
+                    var candidatePropertiesOnPrincipal = FindCandidateForeignKeyProperties(foreignKey, false);
                     if (candidatePropertiesOnPrincipal != null
                         && !foreignKey.PrincipalEntityType.FindForeignKeysInHierarchy(candidatePropertiesOnPrincipal).Any())
                     {
@@ -64,7 +64,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions.Internal
             {
                 return ShouldResetTemporaryProperties(foreignKey)
                     ? relationshipBuilder.HasForeignKey(
-                        null, foreignKey.DeclaringEntityType, ConfigurationSource.Convention, runConventions: true)
+                        null, foreignKey.DeclaringEntityType, ConfigurationSource.Convention, true)
                     : relationshipBuilder;
             }
 
@@ -77,7 +77,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions.Internal
                 && !foreignKey.IsSelfReferencing()
                 && (foreignKey.PrincipalToDependent?.IsCollection() != true))
             {
-                var candidatePropertiesOnPrincipal = FindCandidateForeignKeyProperties(foreignKey, onDependent: false);
+                var candidatePropertiesOnPrincipal = FindCandidateForeignKeyProperties(foreignKey, false);
                 if (candidatePropertiesOnPrincipal != null
                     && !foreignKey.PrincipalEntityType.FindForeignKeysInHierarchy(candidatePropertiesOnPrincipal).Any())
                 {
@@ -143,7 +143,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions.Internal
                     dependentPkProperties,
                     principalEntityType,
                     dependentEntityType,
-                    shouldThrow: false))
+                    false))
             {
                 return dependentPkProperties;
             }
@@ -205,7 +205,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions.Internal
                 foreignKeyProperties,
                 principalEntityType,
                 dependentEntityType,
-                shouldThrow: false))
+                false))
             {
                 return null;
             }
@@ -278,14 +278,14 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions.Internal
         }
 
         /// <summary>
-        ///     This API supports the Entity Framework Core infrastructure and is not intended to be used 
+        ///     This API supports the Entity Framework Core infrastructure and is not intended to be used
         ///     directly from your code. This API may change or be removed in future releases.
         /// </summary>
         public virtual InternalRelationshipBuilder Apply(InternalRelationshipBuilder relationshipBuilder, Navigation navigation)
             => Apply(relationshipBuilder);
 
         /// <summary>
-        ///     This API supports the Entity Framework Core infrastructure and is not intended to be used 
+        ///     This API supports the Entity Framework Core infrastructure and is not intended to be used
         ///     directly from your code. This API may change or be removed in future releases.
         /// </summary>
         public virtual InternalPropertyBuilder Apply(InternalPropertyBuilder propertyBuilder)
@@ -311,6 +311,16 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Conventions.Internal
                 }
             }
             return propertyBuilder;
+        }
+
+        /// <summary>
+        ///     This API supports the Entity Framework Core infrastructure and is not intended to be used
+        ///     directly from your code. This API may change or be removed in future releases.
+        /// </summary>
+        public virtual bool Apply(InternalPropertyBuilder propertyBuilder, FieldInfo oldFieldInfo)
+        {
+            Apply(propertyBuilder);
+            return true;
         }
     }
 }

@@ -362,7 +362,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 if ((propertyType != null
                      && propertyType != existingProperty.ClrType)
                     || (clrProperty != null
-                        && existingProperty.IsShadowProperty))
+                        && existingProperty.PropertyInfo == null))
                 {
                     if (!configurationSource.HasValue
                         || !configurationSource.Value.Overrides(existingProperty.GetConfigurationSource()))
@@ -591,7 +591,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 return null;
             }
 
-            var detachedRelationships = new HashSet<RelationshipBuilderSnapshot>();
+            var detachedRelationships = new List<RelationshipBuilderSnapshot>();
             PropertyBuildersSnapshot detachedProperties = null;
             KeyBuildersSnapshot detachedKeys = null;
             var changedRelationships = new List<InternalRelationshipBuilder>();
@@ -613,7 +613,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                     return null;
                 }
 
-                var foreignKeysUsingKeyProperties = Metadata.GetDeclaredForeignKeys()
+                var foreignKeysUsingKeyProperties = Metadata.GetDerivedForeignKeysInclusive()
                     .Where(fk => relationshipsToBeRemoved.All(r => r.ForeignKey != fk)
                                  && fk.Properties.Any(p => baseEntityType.FindProperty(p.Name)?.IsKey() == true)).ToList();
 
@@ -672,8 +672,52 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 baseEntityType.UpdateConfigurationSource(configurationSource);
             }
 
+            var detachedIndexes = new List<IndexBuilderSnapshot>();
+            HashSet<Property> removedInheritedProperties = null;
+            if (Metadata.BaseType != null)
+            {
+                removedInheritedProperties = new HashSet<Property>(Metadata.BaseType.GetProperties()
+                    .Where(p => baseEntityType == null || baseEntityType.FindProperty(p.Name) != p));
+                if (removedInheritedProperties.Count != 0)
+                {
+                    foreach (var foreignKey in Metadata.GetDerivedForeignKeysInclusive()
+                        .Where(fk => fk.Properties.Any(p => removedInheritedProperties.Contains(p))).ToList())
+                    {
+                        detachedRelationships.Add(DetachRelationship(foreignKey));
+                    }
+
+                    foreach (var index in Metadata.GetDerivedIndexesInclusive()
+                        .Where(i => i.Properties.Any(p => removedInheritedProperties.Contains(p))).ToList())
+                    {
+                        detachedIndexes.Add(DetachIndex(index));
+                    }
+                }
+            }
+
             var originalBaseType = Metadata.BaseType;
             Metadata.HasBaseType(baseEntityType, configurationSource, runConventions: false);
+
+            if (removedInheritedProperties != null)
+            {
+                foreach (var property in removedInheritedProperties)
+                {
+                    property.Builder.Attach(this, property.GetConfigurationSource());
+                }
+            }
+
+            detachedProperties?.Attach(this);
+
+            detachedKeys?.Attach();
+
+            foreach (var indexBuilderSnapshot in detachedIndexes)
+            {
+                indexBuilderSnapshot.Attach();
+            }
+
+            foreach (var detachedRelationship in detachedRelationships)
+            {
+                detachedRelationship.Attach();
+            }
 
             foreach (var relationshipToBeRemoved in relationshipsToBeRemoved)
             {
@@ -703,15 +747,6 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 ModelBuilder.Metadata.ConventionDispatcher.OnForeignKeyAdded(changedRelationship);
             }
 
-            detachedProperties?.Attach(this);
-
-            detachedKeys?.Attach();
-
-            foreach (var detachedRelationship in detachedRelationships)
-            {
-                detachedRelationship.Attach();
-            }
-
             ModelBuilder.Metadata.ConventionDispatcher.OnBaseEntityTypeSet(this, originalBaseType);
 
             return this;
@@ -734,7 +769,8 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 }
             }
 
-            var detachedIndexes = DetachIndexes(propertiesToDetachList.SelectMany(p => p.GetContainingIndexes()).Distinct());
+            var detachedIndexes = propertiesToDetachList.SelectMany(p => p.GetContainingIndexes()).Distinct().ToList()
+                .Select(DetachIndex).ToList();
 
             var detachedKeys = DetachKeys(propertiesToDetachList.SelectMany(p => p.GetContainingKeys()).Distinct());
 
@@ -760,7 +796,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         {
             public PropertyBuildersSnapshot(
                 IReadOnlyList<Tuple<InternalPropertyBuilder, ConfigurationSource>> properties,
-                IndexBuildersSnapshot indexes,
+                IReadOnlyList<IndexBuilderSnapshot> indexes,
                 KeyBuildersSnapshot keys,
                 IReadOnlyList<RelationshipBuilderSnapshot> relationships)
             {
@@ -772,7 +808,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
 
             private IReadOnlyList<Tuple<InternalPropertyBuilder, ConfigurationSource>> Properties { get; }
             private IReadOnlyList<RelationshipBuilderSnapshot> Relationships { get; }
-            private IndexBuildersSnapshot Indexes { get; }
+            private IReadOnlyList<IndexBuilderSnapshot> Indexes { get; }
             private KeyBuildersSnapshot Keys { get; }
 
             public void Attach(InternalEntityTypeBuilder entityTypeBuilder)
@@ -782,7 +818,10 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                     propertyTuple.Item1.Attach(entityTypeBuilder, propertyTuple.Item2);
                 }
 
-                Indexes?.Attach();
+                foreach (var indexBuilderSnapshot in Indexes)
+                {
+                    indexBuilderSnapshot.Attach();
+                }
 
                 Keys?.Attach();
 
@@ -1049,12 +1088,11 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 return null;
             }
 
-            IndexBuildersSnapshot detachedIndexes = null;
+            List<IndexBuilderSnapshot> detachedIndexes = null;
             var existingIndex = Metadata.FindIndex(properties);
             if (existingIndex == null)
             {
-                var derivedIndexes = Metadata.FindDerivedIndexes(properties);
-                detachedIndexes = DetachIndexes(derivedIndexes);
+                detachedIndexes = Metadata.FindDerivedIndexes(properties).ToList().Select(DetachIndex).ToList();
             }
             else if (existingIndex.DeclaringEntityType != Metadata)
             {
@@ -1063,7 +1101,13 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
 
             var indexBuilder = HasIndex(existingIndex, properties, configurationSource);
 
-            detachedIndexes?.Attach();
+            if (detachedIndexes != null)
+            {
+                foreach (var indexBuilderSnapshot in detachedIndexes)
+                {
+                    indexBuilderSnapshot.Attach();
+                }
+            }
 
             return indexBuilder;
         }
@@ -1080,7 +1124,7 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
                 index.UpdateConfigurationSource(configurationSource);
             }
 
-            return index.Builder;
+            return index?.Builder;
         }
 
         /// <summary>
@@ -1103,44 +1147,27 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
             return currentConfigurationSource;
         }
 
-        private class IndexBuildersSnapshot
+        private class IndexBuilderSnapshot
         {
-            public IndexBuildersSnapshot(IReadOnlyList<Tuple<InternalIndexBuilder, ConfigurationSource>> indexes)
+            public IndexBuilderSnapshot(InternalIndexBuilder index, ConfigurationSource configurationSource)
             {
-                Indexes = indexes;
+                Index = index;
+                IndexConfigurationSource = configurationSource;
             }
 
-            private IReadOnlyList<Tuple<InternalIndexBuilder, ConfigurationSource>> Indexes { get; }
+            private InternalIndexBuilder Index { get; }
+            private ConfigurationSource IndexConfigurationSource { get; }
 
-            public void Attach()
-            {
-                foreach (var indexTuple in Indexes)
-                {
-                    indexTuple.Item1.Attach(indexTuple.Item2);
-                }
-            }
+            public void Attach() => Index.Attach(IndexConfigurationSource);
         }
 
-        private static IndexBuildersSnapshot DetachIndexes(IEnumerable<Index> indexesToDetach)
+        private static IndexBuilderSnapshot DetachIndex(Index indexToDetach)
         {
-            var indexesToDetachList = indexesToDetach.ToList();
-            if (indexesToDetachList.Count == 0)
-            {
-                return null;
-            }
-
-            var detachedIndexes = new List<Tuple<InternalIndexBuilder, ConfigurationSource>>();
-            foreach (var indexToDetach in indexesToDetachList)
-            {
-                var entityTypeBuilder = indexToDetach.DeclaringEntityType.Builder;
-                var indexBuilder = indexToDetach.Builder;
-                var removedConfigurationSource = entityTypeBuilder.RemoveIndex(indexToDetach, ConfigurationSource.Explicit);
-                Debug.Assert(removedConfigurationSource != null);
-
-                detachedIndexes.Add(Tuple.Create(indexBuilder, removedConfigurationSource.Value));
-            }
-
-            return new IndexBuildersSnapshot(detachedIndexes);
+            var entityTypeBuilder = indexToDetach.DeclaringEntityType.Builder;
+            var indexBuilder = indexToDetach.Builder;
+            var removedConfigurationSource = entityTypeBuilder.RemoveIndex(indexToDetach, ConfigurationSource.Explicit);
+            Debug.Assert(removedConfigurationSource != null);
+            return new IndexBuilderSnapshot(indexBuilder, removedConfigurationSource.Value);
         }
 
         /// <summary>

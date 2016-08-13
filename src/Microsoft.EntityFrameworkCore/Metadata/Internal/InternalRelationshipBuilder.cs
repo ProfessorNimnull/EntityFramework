@@ -2727,7 +2727,11 @@ namespace Microsoft.EntityFrameworkCore.Metadata.Internal
         /// </summary>
         public virtual InternalRelationshipBuilder Attach(ConfigurationSource configurationSource)
         {
-            Debug.Assert(!Metadata.DeclaringEntityType.GetForeignKeys().Contains(Metadata));
+            if (Metadata.DeclaringEntityType.GetForeignKeys().Contains(Metadata))
+            {
+                Debug.Assert(Metadata.Builder != null);
+                return Metadata.Builder;
+            }
 
             IReadOnlyList<Property> dependentProperties = null;
             if (Metadata.GetForeignKeyPropertiesConfigurationSource()?.Overrides(configurationSource) == true)
